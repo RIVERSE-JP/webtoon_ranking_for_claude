@@ -463,8 +463,11 @@ export function TrendReportCard({ report }: { report?: TrendReport | null }) {
       {/* Section Header + Toggle */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h2 className="text-sm font-bold text-foreground flex items-center gap-1.5">
-            <span>📊</span>
+          <h2 className="text-sm font-bold flex items-center gap-1.5" style={{ color: RV }}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <rect x="1" y="1" width="14" height="14" rx="3" stroke={RV} strokeWidth="1.5" />
+              <path d="M4 11V8M8 11V5M12 11V3" stroke={RV_MID} strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
             JP 웹툰 트렌드 리포트
           </h2>
           <span className="text-[11px] text-muted-foreground">

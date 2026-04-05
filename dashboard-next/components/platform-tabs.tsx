@@ -14,7 +14,7 @@ interface PlatformTabsProps {
 
 export function PlatformTabs({ selected, onSelect, stats }: PlatformTabsProps) {
   return (
-    <div className="flex flex-wrap gap-2 sm:gap-3 justify-center">
+    <div className="grid grid-cols-5 sm:grid-cols-8 xl:grid-cols-[repeat(16,minmax(0,1fr))] gap-1.5 sm:gap-2 justify-items-center mx-auto max-w-4xl xl:max-w-none">
       {PLATFORMS.map((p) => {
         const isActive = selected === p.id;
         return (
@@ -23,7 +23,7 @@ export function PlatformTabs({ selected, onSelect, stats }: PlatformTabsProps) {
             onClick={() => onSelect(p.id)}
             title={p.name}
             className={cn(
-              "relative rounded-2xl p-1.5 sm:p-2 cursor-pointer",
+              "relative rounded-xl p-1 sm:p-1.5 cursor-pointer w-full max-w-[60px]",
               "border-2",
               isActive
                 ? "shadow-lg"
@@ -44,23 +44,23 @@ export function PlatformTabs({ selected, onSelect, stats }: PlatformTabsProps) {
             {isActive && (
               <motion.div
                 layoutId="platform-active-indicator"
-                className="absolute inset-0 rounded-2xl"
+                className="absolute inset-0 rounded-xl"
                 style={{ boxShadow: `0 4px 16px ${p.color}40` }}
                 transition={{ type: "spring", stiffness: 350, damping: 30 }}
               />
             )}
             {p.logo ? (
-              <div className="relative z-10">
+              <div className="relative z-10 flex items-center justify-center">
                 <Image
                   src={p.logo}
                   alt={p.name}
-                  width={56}
-                  height={56}
-                  className="rounded-xl object-contain w-11 h-11 sm:w-14 sm:h-14"
+                  width={48}
+                  height={48}
+                  className="rounded-lg object-contain w-9 h-9 sm:w-11 sm:h-11"
                 />
                 {p.badge && (
                   <span
-                    className="absolute -bottom-1 -right-1 px-1 py-px rounded text-[8px] sm:text-[9px] font-bold text-white leading-none"
+                    className="absolute -bottom-1 -right-1 px-0.5 sm:px-1 py-px rounded text-[7px] sm:text-[8px] font-bold text-white leading-none"
                     style={{ backgroundColor: p.color }}
                   >
                     {p.badge}
@@ -69,7 +69,7 @@ export function PlatformTabs({ selected, onSelect, stats }: PlatformTabsProps) {
               </div>
             ) : (
               <div
-                className="relative z-10 rounded-xl w-11 h-11 sm:w-14 sm:h-14 flex items-center justify-center text-white font-bold text-xl"
+                className="relative z-10 rounded-lg w-9 h-9 sm:w-11 sm:h-11 flex items-center justify-center text-white font-bold text-base sm:text-lg"
                 style={{ backgroundColor: p.color }}
               >
                 {p.name.charAt(0)}
