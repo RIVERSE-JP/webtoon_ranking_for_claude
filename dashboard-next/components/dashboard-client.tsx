@@ -15,6 +15,7 @@ import { contentSwap } from "@/lib/motion";
 import type { Ranking, PlatformStats } from "@/lib/types";
 import type { TrendReport } from "@/lib/trend-report";
 import { TrendReportCard } from "@/components/trend-report";
+import { RiversePeriodReport } from "@/components/riverse-period-report";
 
 interface DashboardClientProps {
   initialDates: string[];
@@ -118,6 +119,10 @@ export function DashboardClient({
 
         <div className="anim-section mt-4" style={{ animationDelay: "60ms" }}>
           <TrendReportCard report={trendReport} />
+        </div>
+
+        <div className="anim-section mt-3" style={{ animationDelay: "90ms" }}>
+          <RiversePeriodReport />
         </div>
 
         <div className="anim-section flex items-center justify-between mt-4 mb-3" style={{ animationDelay: "120ms" }}>
