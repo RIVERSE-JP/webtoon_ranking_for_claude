@@ -61,6 +61,29 @@ GENRE_TABS = [
 # 제외할 탭
 SKIP_TABS = {'キャンペーン', '￥0パス', '新着', 'オリジナル', '雑誌', '小説･ラノベ', 'その他'}
 
+# 팝업/다이얼로그 닫기 버튼 후보 (우선순위 순)
+POPUP_CLOSE_TEXTS = [
+    '閉じる', 'とじる',                                    # 닫기
+    '×', '✕', '✖',                                        # X 버튼
+    'スキップ', 'SKIP',                                    # 스킵
+    '後で', 'あとで', '後で読む', '今はしない', '今はやらない',  # 나중에
+    'キャンセル', 'いいえ',                                # 취소/거부
+    '同意する', 'OK',                                      # 동의/확인 (앱 사용 필수 다이얼로그)
+]
+
+# 팝업 의심 키워드 — 화면에 이 중 하나라도 보이면 팝업/이벤트 화면으로 판단
+POPUP_HINT_KEYWORDS = [
+    '次回から表示しない',           # 다음부터 표시 안함 체크박스 (확실한 팝업 신호)
+    'MissionEvent', 'ミッション',    # 미션 이벤트 (5/3 사고 케이스)
+    'おすすめマンガ',                # 추천만화 미션
+    'ポイント獲得', 'ポイ活',         # 포인트 적립
+    '今すぐ確認', 'プレゼント',       # 프로모션
+    'ログインボーナス', '報酬を受け取る', # 로그인 보너스/보상
+    'クーポン', 'ガチャ',             # 쿠폰/가챠
+    '後日還元',                      # 환원
+    'お知らせ',                      # 공지 다이얼로그
+]
+
 
 
 class LinemangaAppAgent(CrawlerAgent):
@@ -93,19 +116,29 @@ class LinemangaAppAgent(CrawlerAgent):
             return ''
 
     def _check_device(self) -> bool:
-        """ADB 디바이스 연결 확인"""
-        try:
-            result = subprocess.run(
-                f'{ADB_PATH} devices', shell=True, capture_output=True, text=True, timeout=10
-            )
-            lines = result.stdout.strip().split('\n')
-            for line in lines[1:]:  # 첫 줄 "List of devices attached" 스킵
-                if '\tdevice' in line:
-                    self.device_id = line.split('\t')[0]
-                    return True
-            return False
-        except Exception:
-            return False
+        """ADB 디바이스 연결 확인 (데몬 자동 시작 + 재시도)"""
+        import time
+        for attempt in range(3):
+            try:
+                # ADB 서버 시작 (이미 실행 중이면 무시됨)
+                subprocess.run(
+                    f'{ADB_PATH} start-server', shell=True, capture_output=True, text=True, timeout=15
+                )
+                result = subprocess.run(
+                    f'{ADB_PATH} devices', shell=True, capture_output=True, text=True, timeout=10
+                )
+                lines = result.stdout.strip().split('\n')
+                for line in lines[1:]:  # 첫 줄 "List of devices attached" 스킵
+                    if '\tdevice' in line:
+                        self.device_id = line.split('\t')[0]
+                        return True
+                if attempt < 2:
+                    self.logger.info(f"  📱 ADB 디바이스 대기 중... ({attempt+1}/3)")
+                    time.sleep(5)
+            except Exception:
+                if attempt < 2:
+                    time.sleep(5)
+        return False
 
     def _tap(self, x: int, y: int):
         """화면 좌표 탭"""
@@ -163,6 +196,27 @@ class LinemangaAppAgent(CrawlerAgent):
         x = (bounds[0] + bounds[2]) // 2
         y = (bounds[1] + bounds[3]) // 2
         self._tap(x, y)
+
+    def _press_back(self):
+        """안드로이드 BACK 키 — 모달/팝업 닫기 범용 폴백"""
+        self._run_adb('input keyevent KEYCODE_BACK')
+
+    def _collect_all_texts(self, root: ET.Element) -> List[str]:
+        """현재 화면의 모든 UI 텍스트(text + content-desc) 수집 — 휴리스틱 판단용"""
+        texts = []
+        for node in root.iter('node'):
+            t = node.get('text', '').strip()
+            d = node.get('content-desc', '').strip()
+            if t:
+                texts.append(t)
+            if d and d != t:
+                texts.append(d)
+        return texts
+
+    def _looks_like_popup(self, root: ET.Element) -> bool:
+        """현재 화면이 팝업/이벤트 다이얼로그로 의심되는지 판정"""
+        joined = ' '.join(self._collect_all_texts(root))
+        return any(kw in joined for kw in POPUP_HINT_KEYWORDS)
 
     # ===== 스크린샷 & 썸네일 =====
 
@@ -655,71 +709,87 @@ class LinemangaAppAgent(CrawlerAgent):
 
         return rankings
 
-    def _dismiss_popups(self, max_attempts: int = 8):
+    def _dismiss_popups(self, max_attempts: int = 10) -> int:
         """
-        앱 시작 시 표시되는 프로모션 팝업들을 자동 닫기.
+        화면에 보이는 모든 팝업/이벤트 다이얼로그를 자동 닫기.
 
-        매일 표시되는 팝업 유형:
-        - ミッションイベント (미션 이벤트) - "閉じる" + "次回から表示しない"
-        - 毎日ポイ活 (매일 포인트) - "閉じる"
-        - 100%後日還元 (환원 프로모션) - "閉じる" + "今すぐ確認"
-        - 기타 프로모션 배너
+        전략 (순차):
+          1. "次回から表示しない" 체크박스 발견 시 먼저 탭
+          2. POPUP_CLOSE_TEXTS 의 닫기 버튼 텍스트 순차 시도
+          3. 닫기 버튼 없지만 화면이 팝업으로 의심(POPUP_HINT_KEYWORDS) → BACK 키
+          4. 직전과 화면 텍스트가 동일 (탭이 효과 없었음) → BACK 키
+          5. 팝업 의심 안되고 진행 없음이 2회 연속 → 종료
 
-        모두 "閉じる" 버튼으로 닫을 수 있음.
+        Returns: 처리한 팝업 개수
         """
         import time
+
+        dismissed = 0
+        prev_texts_hash = None
+        no_progress = 0
 
         for popup_i in range(max_attempts):
             root = self._dump_ui()
             if root is None:
-                return
-
-            # 1순위: "閉じる" (닫기) 버튼
-            close_bounds = self._find_element_bounds(root, '閉じる')
-            if close_bounds:
-                self.logger.info(f"  🔲 팝업 닫기 ({popup_i + 1})...")
-                # "次回から表示しない" (다음부터 표시하지 않기) 체크박스가 있으면 탭
-                dont_show = self._find_element_bounds(root, '次回から表示しない')
-                if dont_show:
-                    self._tap_center(dont_show)
-                    time.sleep(0.5)
-                self._tap_center(close_bounds)
-                time.sleep(2.5)
+                time.sleep(1)
                 continue
 
-            # 2순위: "とじる" (닫기 - 히라가나 표기)
-            close_bounds2 = self._find_element_bounds(root, 'とじる')
-            if close_bounds2:
-                self.logger.info(f"  🔲 팝업 닫기 (とじる) ({popup_i + 1})...")
-                self._tap_center(close_bounds2)
-                time.sleep(2.5)
+            all_texts = self._collect_all_texts(root)
+            texts_hash = hash(tuple(sorted(all_texts)))
+            screen_unchanged = (texts_hash == prev_texts_hash)
+            prev_texts_hash = texts_hash
+
+            joined = ' '.join(all_texts)
+            is_popup = any(kw in joined for kw in POPUP_HINT_KEYWORDS)
+
+            # 1) "次回から表示しない" 체크박스 먼저 처리
+            dont_show = self._find_element_bounds(root, '次回から表示しない')
+            if dont_show:
+                self._tap_center(dont_show)
+                time.sleep(0.5)
+
+            # 2) 직전 탭이 효과 없었고 팝업이 의심됨 → 즉시 BACK
+            if screen_unchanged and is_popup and popup_i > 0:
+                self.logger.info(f"  🔙 팝업이 안 닫힘 → BACK 키 ({popup_i + 1})")
+                self._press_back()
+                time.sleep(2.0)
+                dismissed += 1
+                no_progress = 0
                 continue
 
-            # 3순위: "×" 또는 "✕" 닫기 버튼
-            for close_text in ['×', '✕', '✖']:
-                close_x = self._find_element_bounds(root, close_text)
-                if close_x:
-                    self.logger.info(f"  🔲 팝업 닫기 ({close_text}) ({popup_i + 1})...")
-                    self._tap_center(close_x)
-                    time.sleep(2.5)
-                    break
-            else:
-                # 4순위: 업데이트/동의 다이얼로그 ("後で", "あとで", "OK", "同意する")
-                handled = False
-                for btn_text in ['後で', 'あとで', '同意する', 'OK', 'スキップ', 'SKIP']:
-                    btn = self._find_element_bounds(root, btn_text)
-                    if btn:
-                        self.logger.info(f"  🔲 다이얼로그 처리 ({btn_text}) ({popup_i + 1})...")
-                        self._tap_center(btn)
-                        time.sleep(2.5)
-                        handled = True
-                        break
-                if not handled:
-                    # 팝업 없음 → 루프 종료
+            # 3) 닫기 버튼 텍스트 순차 시도
+            closed = False
+            for close_text in POPUP_CLOSE_TEXTS:
+                bounds = self._find_element_bounds(root, close_text)
+                if bounds:
+                    self.logger.info(f"  🔲 팝업 닫기 ({close_text}) ({popup_i + 1})")
+                    self._tap_center(bounds)
+                    time.sleep(2.0)
+                    dismissed += 1
+                    closed = True
+                    no_progress = 0
                     break
 
-        if popup_i > 0:
-            self.logger.info(f"  ✅ {popup_i}개 팝업 처리 완료")
+            if closed:
+                continue
+
+            # 4) 닫기 버튼 없음 + 팝업 의심 → BACK 키
+            if is_popup:
+                self.logger.info(f"  🔙 팝업 의심 화면 → BACK 키 ({popup_i + 1})")
+                self._press_back()
+                time.sleep(2.0)
+                dismissed += 1
+                no_progress = 0
+                continue
+
+            # 5) 일반 화면 — 더 닫을 게 없음
+            no_progress += 1
+            if no_progress >= 2:
+                break
+
+        if dismissed > 0:
+            self.logger.info(f"  ✅ {dismissed}개 팝업 처리 완료")
+        return dismissed
 
     def _wake_screen(self):
         """폰 화면 깨우기 (화면 꺼져있거나 잠금 상태일 때)"""
@@ -822,6 +892,14 @@ class LinemangaAppAgent(CrawlerAgent):
                 if home_bounds:
                     self._tap_center(home_bounds)
                     time.sleep(1)
+                continue
+
+            # 스크롤 도중 팝업이 늦게 떴는지 감지 — 떴으면 닫고 재시도
+            # (5/3 사고: 미션 이벤트 팝업이 앱 시작 후 늦게 떠서 홈 스크롤 막음)
+            if self._looks_like_popup(root):
+                self.logger.info("  🔲 스크롤 중 팝업 감지 → 닫기 시도")
+                self._dismiss_popups(max_attempts=5)
+                time.sleep(1)
                 continue
 
             self._swipe_up()

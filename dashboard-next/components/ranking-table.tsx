@@ -74,6 +74,25 @@ export function RankingTable({
   const [publisherFilter, setPublisherFilter] = useState<string>("");
 
   if (rankings.length === 0) {
+    if (platform === "linemanga_app") {
+      return (
+        <div className="my-8 mx-auto max-w-2xl rounded-lg border border-border bg-muted/40 px-6 py-8 text-center">
+          <div className="text-2xl mb-3">⚠️</div>
+          <div className="text-sm font-semibold text-foreground mb-2">
+            라인망가 앱 순위 수집 중단
+          </div>
+          <div className="text-xs text-muted-foreground leading-relaxed">
+            라인망가 앱의 자동화 차단 정책(Debugging Mode Detected)으로
+            <br />
+            당분간 라인망가 앱 순위는 수집할 수 없습니다.
+            <br />
+            <span className="text-muted-foreground/70 mt-2 inline-block">
+              이전에 수집된 날짜의 데이터는 정상 조회 가능합니다.
+            </span>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="text-center py-12 text-muted-foreground">
         데이터가 없습니다.

@@ -89,7 +89,10 @@ class CrawlerOrchestrator:
             KmangaAgent(),
             HandycomicAgent(),
             # ADB 기반 (디바이스 미연결 시 자동 skip)
-            LinemangaAppAgent(),
+            # ⚠️ 2026-05-11 비활성화: 라인망가 26.04.22 업데이트로 USB 디버깅 켜진 폰에서
+            # 앱 실행 거부 ("Debugging Mode Detected"). ADB 크롤링 영구 차단됨.
+            # 재개하려면 우회 방법(별도 폰 + 루팅 등) 마련 후 아래 주석 해제.
+            # LinemangaAppAgent(),
         ]
 
         total = len(agents)
