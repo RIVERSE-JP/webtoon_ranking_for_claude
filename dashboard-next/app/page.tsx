@@ -151,8 +151,9 @@ async function getInitialData(): Promise<InitialData | null> {
     }));
 
     return { dates, latestDate, lastUpdated, stats, riverseCounts, rankings, defaultPlatform };
-  } catch {
+  } catch (e) {
     // 빌드 시 DB 연결 불가 → null 반환 → 빌드 통과 → 런타임에 ISR 재생성
+    console.error("[getInitialData] failed:", e);
     return null;
   }
 }
