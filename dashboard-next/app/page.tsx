@@ -159,20 +159,29 @@ async function getInitialData(): Promise<InitialData | null> {
 }
 
 export default async function Home() {
-  // trend-report가 timeout/throw해도 dashboard 본체는 살리도록 분리
-  const [dataR, trendR] = await Promise.allSettled([
-    getInitialData(),
-    generateTrendReport(),
-  ]);
-  const data = dataR.status === "fulfilled" ? dataR.value : null;
-  const trendReport = trendR.status === "fulfilled" ? trendR.value : null;
+  // 1단계: dashboard 본체 데이터만 먼저 가져옴 (절대 trend-report와 묶지 않음)
+  const data = await getInitialData();
 
   if (!data || !data.latestDate) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <p className="text-muted-foreground">데이터를 불러오는 중...</p>
+        <p className="text-muted-foreground">
+          데이터를 불러오는 중...
+          <br />
+          <span className="text-xs opacity-50">
+            (data={String(!!data)} latestDate={data?.latestDate || "(empty)"})
+          </span>
+        </p>
       </div>
     );
+  }
+
+  // 2단계: trend-report는 별도 try/catch. 실패해도 dashboard는 표시.
+  let trendReport: Awaited<ReturnType<typeof generateTrendReport>> = null;
+  try {
+    trendReport = await generateTrendReport();
+  } catch (e) {
+    console.error("[page] trend-report failed:", e);
   }
 
   return (
