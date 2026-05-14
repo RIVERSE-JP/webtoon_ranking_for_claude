@@ -238,6 +238,15 @@ def get_korean_title(jp_title: str) -> str:
             if len(jp) >= 4 and jp in jp_title:
                 return validate_title_kr(kr, jp)
 
+    # 6순위: 자동 번역 fallback (Google Translate, 캐시됨)
+    # 환경변수 DISABLE_AUTO_TRANSLATE=1 로 끌 수 있음
+    if os.getenv('DISABLE_AUTO_TRANSLATE') != '1':
+        try:
+            from .translator import translate_title
+            return translate_title(jp_title)
+        except Exception:
+            pass
+
     return ""
 
 

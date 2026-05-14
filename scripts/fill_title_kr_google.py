@@ -16,8 +16,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import psycopg2
-from deep_translator import GoogleTranslator
-from crawler.utils import validate_title_kr
+from crawler.translator import translate_title, flush_mappings, is_translatable
 
 DB_URL = os.environ['SUPABASE_DB_URL']
 MAPPINGS_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'title_mappings.json')
@@ -36,19 +35,6 @@ def get_missing_titles() -> list[str]:
     titles = [row[0] for row in cur.fetchall()]
     conn.close()
     return titles
-
-
-def translate_title(translator: GoogleTranslator, title: str) -> str:
-    """단일 제목 번역 + 품질 검증"""
-    try:
-        kr = translator.translate(title)
-        if not kr:
-            return ""
-        # 품질 검증
-        validated = validate_title_kr(kr, title)
-        return validated
-    except Exception as e:
-        return ""
 
 
 def update_db(translations: dict[str, str]):
@@ -77,21 +63,11 @@ def update_db(translations: dict[str, str]):
 
 
 def update_mappings(translations: dict[str, str]):
-    """title_mappings.json 업데이트"""
+    """title_mappings.json 업데이트 (translator 모듈이 캐시 보유)"""
+    flush_mappings()
     with open(MAPPINGS_PATH, 'r', encoding='utf-8') as f:
         mappings = json.load(f)
-
-    added = 0
-    for jp, kr in translations.items():
-        if kr and jp not in mappings:
-            mappings[jp] = kr
-            added += 1
-
-    sorted_m = dict(sorted(mappings.items()))
-    with open(MAPPINGS_PATH, 'w', encoding='utf-8') as f:
-        json.dump(sorted_m, f, ensure_ascii=False, indent=2)
-
-    return added, len(sorted_m)
+    return len(translations), len(mappings)
 
 
 def main():
@@ -106,13 +82,15 @@ def main():
         print("✅ 누락 없음!")
         return
 
-    translator = GoogleTranslator(source='ja', target='ko')
     total_done = 0
     total_skip = 0
     batch_translations = {}
 
     for i, title in enumerate(missing):
-        kr = translate_title(translator, title)
+        if not is_translatable(title):
+            total_skip += 1
+            continue
+        kr = translate_title(title)
 
         if kr:
             batch_translations[title] = kr

@@ -30,6 +30,8 @@ Thumbs.db
 data/rankings.db
 data/backup/
 logs/*.log
+scripts/*.log
+.claude/worktrees/
 *.db-journal
 
 # Playwright

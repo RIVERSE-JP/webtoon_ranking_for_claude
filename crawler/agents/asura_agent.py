@@ -155,33 +155,50 @@ class AsuraAgent:
     # ===== Phase 1: 인기 랭킹 =====
 
     async def _crawl_rankings(self, page: Page):
-        """메인 페이지에서 Weekly/Monthly/All 인기 랭킹 수집"""
-        await page.goto(BASE_URL, wait_until='domcontentloaded', timeout=30000)
-        await page.wait_for_timeout(5000)
+        """API로 Weekly/Monthly/All 인기 랭킹 수집"""
+        API_BASE = 'https://api.asurascans.com/api/trending'
 
-        # 탭 구조: button[data-state=active/inactive] → role="tabpanel"[data-state]
-        # Weekly (기본 활성 탭)
-        self.results['rankings_weekly'] = await self._extract_popular_tab(
-            page, 'weekly'
-        )
+        for period, key in [('weekly', 'rankings_weekly'), ('monthly', 'rankings_monthly'), ('all', 'rankings_all')]:
+            try:
+                resp = await page.goto(f'{API_BASE}/{period}?limit=10', wait_until='domcontentloaded', timeout=15000)
+                if resp and resp.ok:
+                    import json
+                    body = await page.inner_text('body')
+                    data = json.loads(body)
+                    items = data.get('data', data) if isinstance(data, dict) else data
 
-        # Monthly 탭 클릭
-        monthly_tab = await page.query_selector('button:has-text("Monthly")')
-        if monthly_tab:
-            await monthly_tab.click()
-            await page.wait_for_timeout(2000)
-            self.results['rankings_monthly'] = await self._extract_popular_tab(
-                page, 'monthly'
-            )
+                    rankings = []
+                    for rank, item in enumerate(items[:10], 1):
+                        title = item.get('title') or item.get('name', '')
+                        slug = item.get('slug', '')
+                        # 2026-05 기준 응답 키: cover_url. 폴백 키도 함께 시도
+                        thumb = item.get('cover_url') or item.get('cover') or item.get('thumbnail', '')
+                        # public_url은 상대경로(/comics/{slug-hash}). slug만으로는 정확한 URL을 만들 수 없음
+                        rel_url = item.get('public_url') or (f'/comics/{slug}' if slug else '')
+                        public_url = f'{BASE_URL}{rel_url}' if rel_url.startswith('/') else rel_url
+                        rating = item.get('rating', None)
+                        genres = ', '.join(g.get('name', g) if isinstance(g, dict) else str(g) for g in item.get('genres', []))
 
-        # All 탭 클릭
-        all_tab = await page.query_selector('button:has-text("All")')
-        if all_tab:
-            await all_tab.click()
-            await page.wait_for_timeout(2000)
-            self.results['rankings_all'] = await self._extract_popular_tab(
-                page, 'all'
-            )
+                        rankings.append({
+                            'rank': rank,
+                            'title': title,
+                            'url': public_url,
+                            'thumbnail_url': thumb,
+                            'genre': genres,
+                            'rating': rating,
+                        })
+
+                    self.results[key] = rankings
+                    self.logger.info(f"   ✅ [{period}]: {len(rankings)}개 (API)")
+                else:
+                    self.logger.warning(f"   ⚠️ [{period}] API 응답 실패")
+                    # DOM 폴백
+                    await page.goto(BASE_URL, wait_until='domcontentloaded', timeout=30000)
+                    await page.wait_for_timeout(5000)
+                    self.results[key] = await self._extract_popular_tab(page, period)
+            except Exception as e:
+                self.logger.warning(f"   ⚠️ [{period}] API 에러: {e}")
+                self.results[key] = []
 
     async def _extract_popular_tab(self, page: Page, period: str) -> List[Dict]:
         """현재 활성 탭에서 랭킹 추출
@@ -193,8 +210,11 @@ class AsuraAgent:
         items = await page.evaluate("""() => {
             const results = [];
 
-            // /comics/ 링크에서 텍스트가 있는 것만 추출
-            const links = document.querySelectorAll('a[href*="/comics/"]');
+            // Popular 섹션만 타겟 (히어로 배너/트렌딩 제외)
+            // Popular 섹션: section.h-full 내부의 grid 아이템들
+            const popularSection = document.querySelector('section[class*="h-full"][class*="py-3"]');
+            const searchRoot = popularSection || document;
+            const links = searchRoot.querySelectorAll('a[href*="/comics/"]');
             const seen = new Set();
             let rank = 0;
 
@@ -207,13 +227,15 @@ class AsuraAgent:
                 const rawText = link.innerText.trim();
                 if (!rawText || rawText.length < 2) continue;
 
-                // 제목 추출: 숫자(평점)나 "Chapter"를 제거
+                // 제목 추출: 숫자(평점), "Chapter", 시간표시 등 제거
                 const lines = rawText.split('\\n').map(l => l.trim()).filter(l => l.length > 0);
                 let title = '';
                 for (const line of lines) {
-                    // 평점 숫자만 있는 줄이나 Chapter 줄은 건너뛰기
                     if (/^\\d+\\.\\d+$/.test(line)) continue;
                     if (/^Chapter/i.test(line)) continue;
+                    if (/^\\d+\\s*(hours?|days?|weeks?|months?)\\s*ago$/i.test(line)) continue;
+                    if (/^(last|yesterday|today)/i.test(line)) continue;
+                    if (/^Genres:/i.test(line)) continue;
                     title = line;
                     break;
                 }
