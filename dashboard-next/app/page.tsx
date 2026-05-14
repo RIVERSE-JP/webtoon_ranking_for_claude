@@ -6,6 +6,8 @@ import { generateTrendReport } from "@/lib/trend-report";
 
 // ISR: 5분마다 백그라운드 재생성 → Vercel CDN이 캐시 → 첫 방문자도 즉시 응답
 export const revalidate = 300;
+// 데이터 양 증가 대응: SSR function timeout을 60초로 (Vercel 기본 10초)
+export const maxDuration = 60;
 
 type InitialData = {
   dates: string[];
@@ -156,10 +158,13 @@ async function getInitialData(): Promise<InitialData | null> {
 }
 
 export default async function Home() {
-  const [data, trendReport] = await Promise.all([
+  // trend-report가 timeout/throw해도 dashboard 본체는 살리도록 분리
+  const [dataR, trendR] = await Promise.allSettled([
     getInitialData(),
     generateTrendReport(),
   ]);
+  const data = dataR.status === "fulfilled" ? dataR.value : null;
+  const trendReport = trendR.status === "fulfilled" ? trendR.value : null;
 
   if (!data || !data.latestDate) {
     return (
