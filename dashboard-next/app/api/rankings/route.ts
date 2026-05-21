@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
       : Promise.resolve([]),
     titles.length > 0
       ? sql`
-          SELECT title, thumbnail_url, unified_work_id, publisher
+          SELECT title, thumbnail_url, thumbnail_base64, unified_work_id, publisher
           FROM works
           WHERE platform = ${platform}
             AND title = ANY(${titles})
@@ -90,8 +90,8 @@ export async function GET(request: NextRequest) {
   const unifiedIds: Record<string, number> = {};
   const publishers: Record<string, string> = {};
   for (const t of thumbRows) {
-    if (t.thumbnail_url) {
-      thumbnails[t.title] = t.thumbnail_url;
+    if (t.thumbnail_url || t.thumbnail_base64) {
+      thumbnails[t.title] = String(t.thumbnail_url || t.thumbnail_base64);
     }
     if (t.unified_work_id) {
       unifiedIds[t.title] = t.unified_work_id;
@@ -108,7 +108,7 @@ export async function GET(request: NextRequest) {
     const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 
     const fallbackRows = await sql`
-      SELECT w.title AS full_title, w.thumbnail_url, w.unified_work_id
+      SELECT w.title AS full_title, w.thumbnail_url, w.thumbnail_base64, w.unified_work_id
       FROM works w
       WHERE w.platform = ${platform}
         AND EXISTS (
@@ -128,8 +128,9 @@ export async function GET(request: NextRequest) {
           || nfb === norm(t) || nfb.slice(0, 20) === norm(t).slice(0, 20)
       );
       if (matchedShort) {
-        if (fb.thumbnail_url && !thumbnails[matchedShort]) {
-          thumbnails[matchedShort] = fb.thumbnail_url;
+        const fallbackThumbnail = fb.thumbnail_url || fb.thumbnail_base64;
+        if (fallbackThumbnail && !thumbnails[matchedShort]) {
+          thumbnails[matchedShort] = String(fallbackThumbnail);
         }
         if (fb.unified_work_id && !unifiedIds[matchedShort]) {
           unifiedIds[matchedShort] = fb.unified_work_id;

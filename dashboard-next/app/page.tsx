@@ -89,7 +89,7 @@ async function getInitialData(): Promise<InitialData | null> {
         : Promise.resolve([]),
       titles.length > 0
         ? sql`
-            SELECT title, thumbnail_url, unified_work_id, publisher
+            SELECT title, thumbnail_url, thumbnail_base64, unified_work_id, publisher
             FROM works
             WHERE platform = ${defaultPlatform}
               AND title = ANY(${titles})
@@ -131,7 +131,7 @@ async function getInitialData(): Promise<InitialData | null> {
     const unifiedIds: Record<string, number> = {};
     const publishers: Record<string, string> = {};
     for (const t of thumbRows) {
-      if (t.thumbnail_url) thumbnails[t.title] = t.thumbnail_url;
+      if (t.thumbnail_url || t.thumbnail_base64) thumbnails[String(t.title)] = String(t.thumbnail_url || t.thumbnail_base64);
       if (t.unified_work_id) unifiedIds[t.title] = t.unified_work_id;
       if (t.publisher) publishers[t.title] = t.publisher;
     }
