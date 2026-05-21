@@ -48,7 +48,7 @@ function Thumbnail({
       height={62}
       className="rounded shadow-sm bg-muted shrink-0"
       style={{ width: 44, height: 62, objectFit: "cover" }}
-      loading="lazy"
+      loading={src.startsWith("data:") ? "eager" : "lazy"}
       referrerPolicy="no-referrer"
       onError={() => {
         if (loadState === "cdn") {
