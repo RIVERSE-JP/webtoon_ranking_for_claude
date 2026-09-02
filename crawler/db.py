@@ -22,6 +22,18 @@ load_dotenv(project_root / '.env')
 DATABASE_URL = os.environ.get('SUPABASE_DB_URL', '')
 
 
+def _normalize_work_rating(value):
+    """works.rating NUMERIC(3,2)에 안전하게 저장 가능한 값만 반환."""
+    if value is None or value == '':
+        return None
+    try:
+        rating = float(value)
+    except (TypeError, ValueError):
+        return None
+    # NUMERIC(3,2)의 유효 범위는 -9.99~9.99이며 평점은 음수가 아니다.
+    return rating if 0 <= rating < 10 else None
+
+
 def get_db_connection():
     """Supabase PostgreSQL 연결"""
     conn = psycopg2.connect(DATABASE_URL)
@@ -250,7 +262,7 @@ def save_works_metadata(platform: str, works: List[Dict[str, Any]],
         count += 1
 
         # rating/review_count가 있으면 works에 반영 (Asura 등)
-        rating = item.get('rating')
+        rating = _normalize_work_rating(item.get('rating'))
         review_count = item.get('review_count')
         if rating is not None or review_count is not None:
             cursor.execute('''
@@ -383,7 +395,7 @@ def save_work_detail(platform: str, title: str, detail: Dict[str, Any]):
         detail.get('description', ''),
         detail.get('hearts'),
         detail.get('favorites'),
-        detail.get('rating'),
+        _normalize_work_rating(detail.get('rating')),
         detail.get('review_count'),
         platform, title
     ))
